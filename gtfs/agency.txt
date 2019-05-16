@@ -1,0 +1,2 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_lang,agency_phone,agency_fare_url
+YCAT,"Yuma County Intergovernmental Public Transportation Authority",http://www.ycipta.org,America/Phoenix,en,928-783-2235,http://www.ycipta.org/ycat-fares.html
