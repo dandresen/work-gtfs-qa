@@ -82,7 +82,9 @@ subShapes['dummy'] = np.where(subShapes['diff'] < 0,'1','0')
 AND Keep where dummy == 1 AND distance to stop is < 5 (this may change). This logic will ensure the closest stop is grabbed based on criteria other than spatial criteria. 
 The result is a column named "keep" with values of either keep or throw. These values are used later on with a buffer from the stop to highlight the rows to change'''
 
-subShapes['keep'] = np.where(np.logical_or(subShapes['diff'].isna(),np.logical_or(subShapes['dist_to_stp'] < 2.8,np.logical_and(np.logical_and(subShapes['dummy'] == '1', subShapes['dist_to_stp'] < 5.),np.logical_and(subShapes['dummy'] == '1', subShapes['dummy'].shift(-1) == '0')))) ,'keep','throw')
+subShapes['keep'] = np.where(np.logical_or(subShapes['diff'].isna(),\
+    np.logical_or(subShapes['dist_to_stp'] < 2.8,np.logical_and(np.logical_and(subShapes['dummy'] == '1',\
+         subShapes['dist_to_stp'] < 5.),np.logical_and(subShapes['dummy'] == '1', subShapes['dummy'].shift(-1) == '0')))) ,'keep','throw')
 
 
 '''With all of the other parameters above, have a column with a buffer of the stop and check to see if a shape point marked as keep
@@ -96,7 +98,7 @@ intersect_df.drop(['geometry'],axis=1)
 
 # stop dataframe with a buffer- distance can be adjusted if need be
 stopdf = gpd.GeoDataFrame(subStops, geometry=gpd.points_from_xy(subStops.stop_lon,subStops.stop_lat))
-stopdf['geometry'] = stopdf.geometry.buffer(.0005)
+stopdf['geometry'] = stopdf.geometry.buffer(.00023)
 
 # intersect df based on buffer polygon
 intersect_join = gpd.sjoin(intersect_df,stopdf,how='inner',op='intersects')
