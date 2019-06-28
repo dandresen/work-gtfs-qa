@@ -1,34 +1,72 @@
 import pandas as pd
 import geopandas as gpd
 import numpy as np
-import sys 
+import argparse
+from pathlib import Path
 from scipy.spatial.distance import cdist
 
-# avoid some warnings 
+"""Shape2Stop: (V0.1)
+Author: dandresen
+Date: 6/28/19
+
+Replaces the latitude and longitude for shape points "near" a stop with the stop's latitude and longitude.
+
+Problems fixed:
+1)  Most shape issues seen in NB1 related to shape points being too far from a stop.
+
+Process:
+1)  Pulls out unique shapes with their stops and runs an euclidean distance function.
+2)  Adds the following columns the a new shapes DataFrame:
+        [dist_to_stp] uses the euclidean distance from a shape point to the nearest stop
+        [diff] finds the difference between each row in dist_to_stp
+        [dummy] finds where diff < 0 and gives it a value of 1 or 0
+        [keep] uses multiple Boolean expressions based on different criteria from dummy  and dist_to_stp creating values of 'keep' or 'throw'
+3)  Uses a spatial buffer around the stops and intersect the shape points.
+4)  If criteria is met, replace the shape latitude and longitude with the stop latitude and longitude.
+5)  The output will show the amount and percentage of shape points changed.
+
+Instructions:
+1)  Pass a folder path to the GTFS via the -p command line argument (e.g. "python shape2stop.py -p <folder-path>").
+2)  Optionally -v (--verbose) for additional information on shape points for each shape_id or -r (--replace) to overwrite original shapes.txt.
+3)  If not -r shapes_NEW.txt will be created.
+"""
+
+# avoid some warnings from pandas
 pd.options.mode.chained_assignment = None
 
-filepath = sys.argv[1]
+# check directory path
+def dir_path(path):
+    if Path(path).is_dir():
+        return Path(path)
+    else:
+        raise NotADirectoryError(path)
+        
+# parsing arguments 
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--path', type=dir_path, help='file path to GTFS <required>', required=True)
+parser.add_argument('-v', '--verbose', action="store_true", help='console log the amount of shape points that changed for each shape_id')
+parser.add_argument('-o', '--overwrite', action="store_true", help='overwrite existing shapes.txt')
+args = parser.parse_args()
+
 
 def load(fName): 
-    f = filepath + "/" + "{}.txt".format(fName)
+    f = dir_path(args.path) / "{}.txt".format(fName)
     return pd.read_csv(f)
 
 def save(dfName,fName='shapes_NEW'):
     df = dfName
-    df.to_csv(filepath + '/' + "{}.txt".format(fName), sep =',', index=False, float_format="%.6f")
-    return print("Saved {}.txt to {}".format(fName,filepath))
+    df.to_csv(dir_path(args.path) / "{}.txt".format(fName), sep =',', index=False, float_format="%.6f")
+    return print("Saved {}.txt to {}".format(fName,args.path))
 
-# load GTFS files
+# load GTFS files as DataFrames
 try:
     trips = load('trips')
     stops = load('stops')
     stop_times = load('stop_times')
     shapes = load('shapes')
-    print('\nAll needed GTFS files found.')
+    print('\nAll required GTFS files found\nNow, moving shape points...')
 except:
-    print('\nERROR....\nWhere is your GTFS?\n')
-    sys.exit(1)
-
+    print('\nError loading your GTFS\n')
 
 # may break this out into small functions later
 def shape2stop(trips,shapes,stop_times,stops):
@@ -99,29 +137,34 @@ def shape2stop(trips,shapes,stop_times,stops):
 
         finalMerge.round({'shape_pt_lat': 6, 'shape_pt_lon': 6})
 
+        # only keep needed columns
         dropCols = [i for i in range(len(finalMerge.columns)) if i > 4]
         finalMerge.drop(finalMerge.columns[dropCols],axis=1,inplace=True)
 
-        #  print the amount of points that were changed
+        # print the amount of points that were changed
         changedPoints = finalMerge.shape_pt_lat != subShapes.shape_pt_lat
         percentChanged =  round((len(finalMerge[changedPoints])/len(subShapes) * 100),2)
         
+        # verbose output (optional)
+        if args.verbose:
+            print('Moved {} shape points for shape_id {} ({}%)'.format(len(finalMerge[changedPoints]),i,percentChanged)) 
+
         totalChanged.append(finalMerge[changedPoints])
         data.append(finalMerge)
 
 
     finalMerge = pd.concat(data)
+    
+    # get some information about how many shape points were moved
     totalChanged = pd.concat(totalChanged)
     totalChangedPercent = round((len(totalChanged.shape_id.tolist())/len(shapes.shape_id) * 100),2)
     print('\nConnected {} ({}%) shape points to a stop'.format(len(totalChanged),totalChangedPercent))
+    
+    # overwrite existing shapes.txt (optional)
+    if args.overwrite:
+        return save(finalMerge,'shapes')
 
     return save(finalMerge)
 
-
-print('\nNow, moving shape points...')
-
-# run the main function here
+# run the main function 
 shape2stop(trips,shapes,stop_times,stops)
-
-
-
