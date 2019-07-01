@@ -118,7 +118,9 @@ def shape2stop(trips,shapes,stop_times,stops):
 
         # stop dataframe with a buffer- distance can be adjusted if need be
         stopdf = gpd.GeoDataFrame(subStops, geometry=gpd.points_from_xy(subStops.stop_lon,subStops.stop_lat))
-        stopdf['geometry'] = stopdf.geometry.buffer(0.000205)
+        # stopdf['geometry'] = stopdf.geometry.buffer(0.000205)
+        stopdf['geometry'] = stopdf.geometry.buffer(0.0004)
+
 
         # intersect df based on buffer polygon
         intersect_join = gpd.sjoin(intersect_df,stopdf,how='inner',op='intersects')
@@ -132,8 +134,11 @@ def shape2stop(trips,shapes,stop_times,stops):
         finalMerge = badMerge[~badMerge.index.duplicated()]
         
         # change out shape point lat and lon with stop lat and lon
-        finalMerge.loc[(finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep'), 'shape_pt_lat'] = finalMerge['stop_lat']
-        finalMerge.loc[(finalMerge['joined'] == 'true' ) & (finalMerge['keep'] == 'keep'), 'shape_pt_lon'] = finalMerge['stop_lon']
+        # finalMerge.loc[(finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep'), 'shape_pt_lat'] = finalMerge['stop_lat']
+        # finalMerge.loc[(finalMerge['joined'] == 'true' ) & (finalMerge['keep'] == 'keep'), 'shape_pt_lon'] = finalMerge['stop_lon']
+
+        finalMerge.loc[((finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep')), 'shape_pt_lat'] = finalMerge['stop_lat']
+        finalMerge.loc[((finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep')), 'shape_pt_lon'] = finalMerge['stop_lon']
 
         finalMerge.round({'shape_pt_lat': 6, 'shape_pt_lon': 6})
 
