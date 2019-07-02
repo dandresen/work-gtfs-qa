@@ -3,27 +3,23 @@ import geopandas as gpd
 import numpy as np
 import argparse
 from pathlib import Path
-from scipy.spatial.distance import cdist
+from math import radians, cos, sin, asin, sqrt
 
-"""Shape2Stop: (V0.1)
+"""Shape2Stop: (V0.2)
 Author: dandresen
-Date: 6/28/19
+Date: 07/02/19
 
-Replaces the latitude and longitude for shape points "near" a stop with the stop's latitude and longitude.
+Replaces the latitude and longitude for nearest shape point to a stop with the stop's latitude and longitude.
 
 Problems fixed:
 1)  Most shape issues seen in NB1 related to shape points being too far from a stop.
 
 Process:
-1)  Pulls out unique shapes with their stops and runs an euclidean distance function.
-2)  Adds the following columns the a new shapes DataFrame:
-        [dist_to_stp] uses the euclidean distance from a shape point to the nearest stop
-        [diff] finds the difference between each row in dist_to_stp
-        [dummy] finds where diff < 0 and gives it a value of 1 or 0
-        [keep] uses multiple Boolean expressions based on different criteria from dummy  and dist_to_stp creating values of 'keep' or 'throw'
-3)  Uses a spatial buffer around the stops and intersect the shape points.
-4)  If criteria is met, replace the shape latitude and longitude with the stop latitude and longitude.
-5)  The output will show the amount and percentage of shape points changed.
+1)  Pulls out unique shapes with their stops.
+2)  Uses a spatial buffer around the stops and intersects the shape points.
+3)  Uses a variation of the Haversine distance formula to find the nearest shape point to the stop. 
+4)  If criteria is met, replaces the shape latitude and longitude with the stop latitude and longitude.
+5)  The output will show the total and percentage of shape points changed.
 
 Instructions:
 1)  Pass a folder path to the GTFS via the -p command line argument (e.g. "python shape2stop.py -p <folder-path>").
@@ -58,6 +54,21 @@ def save(dfName,fName='shapes_NEW'):
     df.to_csv(dir_path(args.path) / "{}.txt".format(fName), sep =',', index=False, float_format="%.6f")
     return print("Saved {}.txt to {}".format(fName,args.path))
 
+# distance from shape point to stop- modified Haversine formula
+def haversine(row): # stop_lat, stop_lon, shape_pt_lat, shape_pt_lon
+
+    R = 3959.87433 # miles
+
+    dLat = radians(row['stop_lat'] - row['shape_pt_lat'])
+    dLon = radians(row['stop_lon'] - row['shape_pt_lon'])
+    lat1 = radians(row['shape_pt_lat'])
+    lat2 = radians(row['stop_lat'])
+
+    a = sin(dLat/2)**2 + cos(lat1)*cos(lat2)*sin(dLon/2)**2
+    c = 2*asin(sqrt(a))
+
+    return R * c
+
 # load GTFS files as DataFrames
 try:
     trips = load('trips')
@@ -80,36 +91,6 @@ def shape2stop(trips,shapes,stop_times,stops):
         subTrips = trips[trips.trip_id.isin(subTripsList)]
         subStopTimesList = stop_times.stop_id[stop_times.trip_id.isin(subTripsList)].tolist()
         subStops = stops[stops.stop_id.isin(subStopTimesList)]
-        
-        # turn stops & shapes coords to list, then numpy array
-        # this will be used for the distance function
-        stpLat = subStops.stop_lat.tolist()
-        stpLon = subStops.stop_lon.tolist()
-        stpCoord = np.array(list(zip(stpLat,stpLon)))
-
-        shpLat = subShapes.shape_pt_lat.tolist()
-        shpLon = subShapes.shape_pt_lon.tolist()
-        shpCoord = np.array(list(zip(shpLat,shpLon)))
-        
-        # get distance of each shape point from nearest stop
-        subShapes['dist_to_stp'] = cdist(shpCoord,stpCoord,'euclidean').min(axis=1) * 10000
-
-
-        # find difference between dist_to_stp rows
-        subShapes['diff'] = subShapes['dist_to_stp'] - subShapes['dist_to_stp'].shift(1)
-
-        # create a dummy column marking where the diff is negative
-        subShapes['dummy'] = np.where(subShapes['diff'] < 0,1,0)
-
-        # logic to decide which shape points to keep, o in this case, change
-        subShapes['keep'] = np.where(np.logical_or(subShapes['diff'].isna(),\
-                                                            np.logical_or(subShapes['dist_to_stp'] < 2.8,\
-                                                                            np.logical_and(np.logical_and(subShapes['dummy'] == 1, subShapes['dist_to_stp'] < 5.0),\
-                                                                                        np.logical_and(subShapes['dummy'] == 1, subShapes['dummy'].shift(-1) == 0)\
-                                                                                        )\
-                                                                        )\
-                                                            ) ,'keep','throw')
-
 
         # create a geodataframe to do an intersection 
         intersect_df = gpd.GeoDataFrame(subShapes, geometry = gpd.points_from_xy(subShapes.shape_pt_lon,subShapes.shape_pt_lat))
@@ -119,26 +100,44 @@ def shape2stop(trips,shapes,stop_times,stops):
         # stop dataframe with a buffer- distance can be adjusted if need be
         stopdf = gpd.GeoDataFrame(subStops, geometry=gpd.points_from_xy(subStops.stop_lon,subStops.stop_lat))
         # stopdf['geometry'] = stopdf.geometry.buffer(0.000205)
-        stopdf['geometry'] = stopdf.geometry.buffer(0.0004)
+        stopdf['geometry'] = stopdf.geometry.buffer(0.001)
 
 
         # intersect df based on buffer polygon
-        intersect_join = gpd.sjoin(intersect_df,stopdf,how='inner',op='intersects')
+        spatial_join = gpd.sjoin(intersect_df,stopdf,how='inner',op='intersects')
 
         # create a column to identify the points that were joined
-        intersect_join['joined'] = 'true'
+        spatial_join['joined'] = 'true'
+
+        # haversine- get distance from stop
+        spatial_join['hav_dist'] = spatial_join.apply(haversine,axis=1)
+
+        # make sure first and last shape points are included
+        firstPoint = subShapes.shape_pt_sequence.tolist()[0]
+        lastPoint = subShapes.shape_pt_sequence.tolist()[-1]
+
+        keepingFirst = spatial_join.shape_pt_sequence == firstPoint
+        putMeBackAfterDropDupsFirst = spatial_join[keepingFirst]
+
+        keepingLast = spatial_join.shape_pt_sequence == lastPoint
+        putMeBackAfterDropDupsLast = spatial_join[keepingLast]
+
+        # sort and drop
+        spatial_join.sort_values(by=['stop_id','hav_dist'],inplace=True)
+        spatial_join.drop_duplicates(subset=['stop_id'], keep='first',inplace=True)
+
+        # add first and last points
+        spatial_join = spatial_join.append(putMeBackAfterDropDupsFirst)
+        spatial_join = spatial_join.append(putMeBackAfterDropDupsLast)
 
         # join the intersect df back to the nearest shape df based on index and create the new shapes.txt
-        badMerge = pd.merge(subShapes,intersect_join,how='left',suffixes=('','_y'),left_index=True,right_index=True)
+        badMerge = pd.merge(subShapes,spatial_join,how='left',suffixes=('','_y'),left_index=True,right_index=True)
         # got a duplicated index somehow, drop it here
         finalMerge = badMerge[~badMerge.index.duplicated()]
         
         # change out shape point lat and lon with stop lat and lon
-        # finalMerge.loc[(finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep'), 'shape_pt_lat'] = finalMerge['stop_lat']
-        # finalMerge.loc[(finalMerge['joined'] == 'true' ) & (finalMerge['keep'] == 'keep'), 'shape_pt_lon'] = finalMerge['stop_lon']
-
-        finalMerge.loc[((finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep')), 'shape_pt_lat'] = finalMerge['stop_lat']
-        finalMerge.loc[((finalMerge['joined'] == 'true') & (finalMerge['keep'] == 'keep')), 'shape_pt_lon'] = finalMerge['stop_lon']
+        finalMerge.loc[(finalMerge['joined'] == 'true'), 'shape_pt_lat'] = finalMerge['stop_lat']
+        finalMerge.loc[(finalMerge['joined'] == 'true'), 'shape_pt_lon'] = finalMerge['stop_lon']
 
         finalMerge.round({'shape_pt_lat': 6, 'shape_pt_lon': 6})
 
