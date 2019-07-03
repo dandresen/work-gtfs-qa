@@ -100,7 +100,7 @@ def shape2stop(trips,shapes,stop_times,stops):
         # stop dataframe with a buffer- distance can be adjusted if need be
         stopdf = gpd.GeoDataFrame(subStops, geometry=gpd.points_from_xy(subStops.stop_lon,subStops.stop_lat))
         # stopdf['geometry'] = stopdf.geometry.buffer(0.000205)
-        stopdf['geometry'] = stopdf.geometry.buffer(0.001)
+        stopdf['geometry'] = stopdf.geometry.buffer(0.0009)
 
 
         # intersect df based on buffer polygon
