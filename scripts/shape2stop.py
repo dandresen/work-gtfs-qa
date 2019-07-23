@@ -1,21 +1,20 @@
 import pandas as pd
 import geopandas as gpd
-import numpy as np
 import argparse
 from pathlib import Path
 from math import radians, cos, sin, asin, sqrt
 
-"""Shape2Stop: (V0.2)
+"""Shape2Stop: (v0.2)
 Author: dandresen
 Date: 07/02/19
 
 Replaces the latitude and longitude for nearest shape point to a stop with the stop's latitude and longitude.
 
 Problems fixed:
-1)  Most shape issues seen in NB1 related to shape points being too far from a stop.
+1)  Most shape issues seen in NB1 are related to shape points being too far from a stop.
 
 Process:
-1)  Pulls out unique shapes with their stops.
+1)  Ingests GTFS and pulls out unique shapes with their stops.
 2)  Uses a spatial buffer around the stops and intersects the shape points.
 3)  Uses a variation of the Haversine distance formula to find the nearest shape point to the stop. 
 4)  If criteria is met, replaces the shape latitude and longitude with the stop latitude and longitude.
@@ -23,8 +22,8 @@ Process:
 
 Instructions:
 1)  Pass a folder path to the GTFS via the -p command line argument (e.g. "python shape2stop.py -p <folder-path>").
-2)  Optionally -v (--verbose) for additional information on shape points for each shape_id or -r (--replace) to overwrite original shapes.txt.
-3)  If not -r shapes_NEW.txt will be created.
+2)  Optionally -v (--verbose) for additional information on shape points for each shape_id, or -o (--overwrite) to overwrite original shapes.txt.
+3)  If not -o, shapes_NEW.txt will be created.
 """
 
 # avoid some warnings from pandas
@@ -54,7 +53,7 @@ def save(dfName,fName='shapes_NEW'):
     df.to_csv(dir_path(args.path) / "{}.txt".format(fName), sep =',', index=False, float_format="%.6f")
     return print("Saved {}.txt to {}".format(fName,args.path))
 
-# distance from shape point to stop- modified Haversine formula
+# modified Haversine formula
 def haversine(row): # stop_lat, stop_lon, shape_pt_lat, shape_pt_lon
 
     R = 3959.87433 # miles
@@ -79,15 +78,14 @@ try:
 except:
     print('\nError loading your GTFS\n')
 
-# may break this out into small functions later
 def shape2stop(trips,shapes,stop_times,stops):
 
     shapeList = trips.shape_id.unique().tolist()
     data = []
     totalChanged = []
-    for i in shapeList:
-        subShapes = shapes[shapes.shape_id == i]
-        subTripsList = trips[trips.shape_id == i].trip_id.unique().tolist()
+    for shapeid in shapeList:
+        subShapes = shapes[shapes.shape_id == shapeid]
+        subTripsList = trips[trips.shape_id == shapeid].trip_id.unique().tolist()
         subTrips = trips[trips.trip_id.isin(subTripsList)]
         subStopTimesList = stop_times.stop_id[stop_times.trip_id.isin(subTripsList)].tolist()
         subStops = stops[stops.stop_id.isin(subStopTimesList)]
@@ -99,7 +97,6 @@ def shape2stop(trips,shapes,stop_times,stops):
 
         # stop dataframe with a buffer- distance can be adjusted if need be
         stopdf = gpd.GeoDataFrame(subStops, geometry=gpd.points_from_xy(subStops.stop_lon,subStops.stop_lat))
-        # stopdf['geometry'] = stopdf.geometry.buffer(0.000205)
         stopdf['geometry'] = stopdf.geometry.buffer(0.0009)
 
 
