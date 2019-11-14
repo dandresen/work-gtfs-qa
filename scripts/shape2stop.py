@@ -148,7 +148,7 @@ def shape2stop(trips,shapes,stop_times,stops):
         
         # verbose output (optional)
         if args.verbose:
-            print('Moved {} shape points for shape_id {} ({}%)'.format(len(finalMerge[changedPoints]),i,percentChanged)) 
+            print('Moved {} shape points for shape_id {} ({}%)'.format(len(finalMerge[changedPoints]),shapeid,percentChanged)) 
 
         totalChanged.append(finalMerge[changedPoints])
         data.append(finalMerge)
